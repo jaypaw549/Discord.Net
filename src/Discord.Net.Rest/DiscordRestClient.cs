@@ -24,6 +24,8 @@ namespace Discord.Rest
         /// </summary>
         /// <param name="config">The configuration to be used with the client.</param>
         public DiscordRestClient(DiscordRestConfig config) : base(config, CreateApiClient(config)) { }
+        // used for socket client rest access
+        internal DiscordRestClient(DiscordRestConfig config, API.DiscordRestApiClient api) : base(config, api) { }
 
         private static API.DiscordRestApiClient CreateApiClient(DiscordRestConfig config)
             => new API.DiscordRestApiClient(config.RestClientProvider, DiscordRestConfig.UserAgent);
@@ -31,6 +33,8 @@ namespace Discord.Rest
         {
             if (disposing)
                 ApiClient.Dispose();
+
+            base.Dispose(disposing);
         }
 
         /// <inheritdoc />
@@ -46,12 +50,12 @@ namespace Discord.Rest
             _applicationInfo = null;
             return Task.Delay(0);
         }
-        
+
         public async Task<RestApplication> GetApplicationInfoAsync(RequestOptions options = null)
         {
             return _applicationInfo ?? (_applicationInfo = await ClientHelper.GetApplicationInfoAsync(this, options).ConfigureAwait(false));
         }
-        
+
         public Task<RestChannel> GetChannelAsync(ulong id, RequestOptions options = null)
             => ClientHelper.GetChannelAsync(this, id, options);
         public Task<IReadOnlyCollection<IRestPrivateChannel>> GetPrivateChannelsAsync(RequestOptions options = null)
@@ -60,7 +64,7 @@ namespace Discord.Rest
             => ClientHelper.GetDMChannelsAsync(this, options);
         public Task<IReadOnlyCollection<RestGroupChannel>> GetGroupChannelsAsync(RequestOptions options = null)
             => ClientHelper.GetGroupChannelsAsync(this, options);
-        
+
         public Task<IReadOnlyCollection<RestConnection>> GetConnectionsAsync(RequestOptions options = null)
             => ClientHelper.GetConnectionsAsync(this, options);
 
@@ -79,12 +83,12 @@ namespace Discord.Rest
             => ClientHelper.GetGuildsAsync(this, options);
         public Task<RestGuild> CreateGuildAsync(string name, IVoiceRegion region, Stream jpegIcon = null, RequestOptions options = null)
             => ClientHelper.CreateGuildAsync(this, name, region, jpegIcon, options);
-        
+
         public Task<RestUser> GetUserAsync(ulong id, RequestOptions options = null)
             => ClientHelper.GetUserAsync(this, id, options);
         public Task<RestGuildUser> GetGuildUserAsync(ulong guildId, ulong id, RequestOptions options = null)
             => ClientHelper.GetGuildUserAsync(this, guildId, id, options);
-        
+
         public Task<IReadOnlyCollection<RestVoiceRegion>> GetVoiceRegionsAsync(RequestOptions options = null)
             => ClientHelper.GetVoiceRegionsAsync(this, options);
         public Task<RestVoiceRegion> GetVoiceRegionAsync(string id, RequestOptions options = null)
