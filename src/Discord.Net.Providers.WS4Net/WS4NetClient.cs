@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 using WebSocket4Net;
 using WS4NetSocket = WebSocket4Net.WebSocket;
 
-namespace Discord.Net.Providers.WS4NetAsync
+namespace Discord.Net.Providers.WS4Net
 {
     internal class WS4NetClient : IWebSocketClient, IDisposable
     {
