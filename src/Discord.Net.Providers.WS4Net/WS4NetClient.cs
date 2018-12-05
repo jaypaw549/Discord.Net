@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 using WebSocket4Net;
 using WS4NetSocket = WebSocket4Net.WebSocket;
 
-namespace Discord.Net.Providers.WS4Net
+namespace Discord.Net.Providers.WS4NetAsync
 {
     internal class WS4NetClient : IWebSocketClient, IDisposable
     {
@@ -22,7 +22,10 @@ namespace Discord.Net.Providers.WS4Net
         private CancellationTokenSource _disconnectCancelTokenSource;
         private CancellationTokenSource _cancelTokenSource;
         private CancellationToken _cancelToken, _parentToken;
-        private ManualResetEventSlim _waitUntilConnect;
+
+        private TaskCompletionSource<bool> _connection_promise;
+        private bool _connected = false;
+
         private bool _isDisposed;
 
         public WS4NetClient()
@@ -32,7 +35,7 @@ namespace Discord.Net.Providers.WS4Net
             _disconnectCancelTokenSource = new CancellationTokenSource();
             _cancelToken = CancellationToken.None;
             _parentToken = CancellationToken.None;
-            _waitUntilConnect = new ManualResetEventSlim();
+            _connection_promise = null;
         }
         private void Dispose(bool disposing)
         {
@@ -47,6 +50,7 @@ namespace Discord.Net.Providers.WS4Net
                 _isDisposed = true;
             }
         }
+
         public void Dispose()
         {
             Dispose(true);
@@ -64,6 +68,7 @@ namespace Discord.Net.Providers.WS4Net
                 _lock.Release();
             }
         }
+
         private async Task ConnectInternalAsync(string host)
         {
             await DisconnectInternalAsync().ConfigureAwait(false);
@@ -88,8 +93,30 @@ namespace Discord.Net.Providers.WS4Net
             _client.Opened += OnConnected;
             _client.Closed += OnClosed;
 
+            if (!_connected) // _connected serves as our ManualResetEventSlim set value
+            {
+                _client.Error += OnError;
+
+                //_connection promise serves as our blocking mechanism, use that if we aren't completed yet.
+                if (_connection_promise?.Task.IsCompleted ?? true)
+                    _connection_promise = new TaskCompletionSource<bool>();
+            }
+
             _client.Open();
-            _waitUntilConnect.Wait(_cancelToken);
+
+            if (!_connected)
+                try
+                {
+                    //Set our _connected value here so as to not violate our lock.
+                    _connected = await _connection_promise.Task.ConfigureAwait(false);
+                }
+                finally
+                {
+                    _client.Error -= OnError;
+                }
+
+            if (!_connected)
+                throw new Exception("Unable to connect!");
         }
 
         public async Task DisconnectAsync()
@@ -104,6 +131,7 @@ namespace Discord.Net.Providers.WS4Net
                 _lock.Release();
             }
         }
+
         private Task DisconnectInternalAsync(bool isDisposing = false)
         {
             _disconnectCancelTokenSource.Cancel();
@@ -125,7 +153,7 @@ namespace Discord.Net.Providers.WS4Net
             catch { }
             _client = null;
 
-            _waitUntilConnect.Reset();
+            _connected = false;
             return Task.Delay(0);
         }
 
@@ -133,6 +161,7 @@ namespace Discord.Net.Providers.WS4Net
         {
             _headers[key] = value;
         }
+
         public void SetCancelToken(CancellationToken cancelToken)
         {
             _cancelTokenSource?.Dispose();
@@ -161,18 +190,27 @@ namespace Discord.Net.Providers.WS4Net
         {
             TextMessage(e.Message).GetAwaiter().GetResult();
         }
+
         private void OnBinaryMessage(object sender, DataReceivedEventArgs e)
         {
             BinaryMessage(e.Data, 0, e.Data.Length).GetAwaiter().GetResult();
         }
+
         private void OnConnected(object sender, object e)
         {
-            _waitUntilConnect.Set();
+            _connection_promise?.TrySetResult(true);
         }
+
         private void OnClosed(object sender, object e)
         {
             var ex = (e as SuperSocket.ClientEngine.ErrorEventArgs)?.Exception ?? new Exception("Unexpected close");
             Closed(ex).GetAwaiter().GetResult();
+        }
+
+        private void OnError(object sender, object e)
+        {
+            //Task.Run(() => _connection_promise?.TrySetResult(false));
+            Task.Run(() => _connection_promise?.TrySetException((e as SuperSocket.ClientEngine.ErrorEventArgs)?.Exception ?? new Exception("Unexpected exception while connecting!")));
         }
     }
 }
